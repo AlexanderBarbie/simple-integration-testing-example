@@ -1,0 +1,9 @@
+version: "3.9"
+services:
+  simple-emulator:
+    build:
+      context: ./simple-emulator
+    environment:
+      - SIM_TTY_1=/dev/ttyUSB0
+      - SIM_TTY_1_ADDRESS=172.28.1.3
+      - SIM_TTY_1_PORT=7060
