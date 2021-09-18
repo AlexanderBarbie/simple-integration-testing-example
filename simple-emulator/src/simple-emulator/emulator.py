@@ -1,4 +1,29 @@
 #!/usr/bin/env python3
+
+"""
+MIT License
+
+Copyright (c) 2021 Alexander Barbie
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+"""
+
 import argparse
 import csv
 import sys
@@ -16,12 +41,38 @@ class Options(object):
         parser.add_argument(
             "filename", help="The path to a file, e.g., /path/to/file.txt")
         parser.add_argument(
-            "period", default=0, type=float, help="The interval in which a line in the file should be read.")
+            "interval", default=None, type=float, help="The interval in which a line in the file should be read.")
 
         self.args = parser.parse_args(argv)
 
     def get_args(self):
         return vars(self.args)
+
+
+class RepeatingTimer(object):
+    """SOURCE: https://stackoverflow.com/questions/24072765/timer-cannot-restart-after-it-is-being-stopped-in-python"""
+
+    def __init__(self, interval, f, *args, **kwargs):
+        self.interval = interval
+        self.f = f
+        self.args = args
+        self.kwargs = kwargs
+
+        self.timer = None
+
+    def callback(self):
+        self.f(*self.args, **self.kwargs)
+        self.start()
+
+    def isAlive(self):
+        return self.timer.isAlive()
+
+    def cancel(self):
+        self.timer.cancel()
+
+    def start(self):
+        self.timer = Timer(self.interval, self.callback)
+        self.timer.start()
 
 
 class SimpleEmulator(object):
@@ -45,7 +96,7 @@ class SimpleEmulator(object):
 
     def get_sample(self) -> None:
         new_value = self.read_next()
-        self.serial_port.write(b''.join(new_value.values()))
+        self.serial_port.write('#{}: {}\r\n'.format(list(new_value.keys())[0], list(new_value.values())[0]).encode())
 
     def read_next(self) -> dict:
         if self.__current_line + 1 > len(self.file):
@@ -67,44 +118,49 @@ class SimpleEmulator(object):
     def server(self) -> None:
         try:
             while True:
-                received_command = self.serial_port.readline().decode().rstrip().upper()
-                if received_command is None:
+                received_command = self.serial_port.readline().decode().rstrip()
+                if received_command is None or len(received_command) == 0:
                     continue
                 elif received_command == 'GET_SAMPLE':
                     self.get_sample()
-                elif received_command[0:5] == 'PERIOD':
-                    period_command, value = received_command.split(' ')
-                    if self.timer.isAlive():
-                        self.timer.cancel()
+                elif received_command[:6] == 'PERIOD':
+                    interval_command, value = received_command.split(' ')
+                    value = float(value)
+                    if self.timer is not None:
+                        if self.timer.isAlive():
+                            self.timer.cancel()
                     self.timer = value
-                    self.serial_port.write(b'SET NEW PERIOD: {} (seconds)'.format(value))
+                    self.serial_port.write('SET NEW PERIOD: {} (seconds)\r\n'.format(value).encode())
                 else:
-                    self.serial_port.write(b'Invalid Command')
+                    print("WTF: {}".format(received_command))
+                    self.serial_port.write('Invalid Command\r\n'.encode())
         except serial.SerialException:
             print('Serial port is already opened or does not exist.')
 
-    def start_emulator(self, serial_port, filename, period=None) -> None:
+    def start_emulator(self, serial_port: str, filename: str, interval: float = 0) -> None:
         self.serial_port = serial_port
         self.file = filename
-        self.timer = period
+        self.timer = interval
 
         self.server()
 
     def stop_emulator(self) -> None:
         self.timer = 0
+        self.serial_port.cancel_read()
+        self.serial_port.cancel_write()
         self.serial_port.close()
 
     @property
-    def timer(self) -> Timer:
+    def timer(self) -> RepeatingTimer:
         return self.__timer
 
     @timer.setter
-    def timer(self, period: float) -> None:
+    def timer(self, interval: float) -> None:
         if self.__timer is not None:
             if self.__timer.isAlive():
                 self.__timer.cancel()
-        if period > 0:
-            self.__timer = Timer(interval=period, function=self.get_sample)
+        if interval > 0:
+            self.__timer = RepeatingTimer(interval, self.get_sample)
             self.__timer.start()
         else:
             self.__timer = None
@@ -115,7 +171,7 @@ if __name__ == "__main__":
     try:
         options = Options(sys.argv[1:])
         emulator = SimpleEmulator()
-        emulator.start_emulator(options.args.serial_port, options.args.filename, options.args.period)
+        emulator.start_emulator(options.args.serial_port, options.args.filename, options.args.interval)
         print("Emulator was started")
     except KeyboardInterrupt:
         emulator.stop_emulator()
