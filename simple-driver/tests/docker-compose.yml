@@ -10,7 +10,7 @@ services:
     ports:
       - 7060:7060
     tty: true
-    command: bash -c "sleep 0.5 && python3 /home/driver/simple-driver/src/simple-driver/driver.py $${EMU_SIM_TTY_1} 0.0"
+    command: /bin/bash
     networks:
       simple-test-network:
         ipv4_address: 172.18.0.10
