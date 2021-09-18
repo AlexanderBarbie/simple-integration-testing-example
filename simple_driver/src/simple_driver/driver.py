@@ -25,12 +25,13 @@ SOFTWARE.
 """
 
 import argparse
+import signal
 import sys
 import threading
 import time
 
 import serial
-import signal
+
 
 class Options(object):
 
@@ -78,6 +79,7 @@ class Event(object):
 class SimpleDriver(object):
     def __init__(self):
         self.__serial_port = None
+        self.driver_thread = None
 
     def get_sample(self) -> None:
         if self.serial_port is not None:
@@ -90,10 +92,13 @@ class SimpleDriver(object):
 
     @serial_port.setter
     def serial_port(self, serial_port: str) -> None:
-        try:
-            self.__serial_port = serial.Serial(serial_port, baudrate=9200, timeout=0.5)  # open serial port
-        except serial.SerialException:
-            raise IOError("Problem connecting to serial device.")
+        if serial_port is None:
+            self.__serial_port = None
+        else:
+            try:
+                self.__serial_port = serial.Serial(serial_port, baudrate=9600, timeout=0)  # open serial port
+            except serial.SerialException:
+                raise IOError("Problem connecting to serial device.")
 
     def server(self) -> None:
         try:
@@ -108,14 +113,14 @@ class SimpleDriver(object):
                 else:
                     print(received_message)
         except serial.SerialException:
-            print('Serial port is already opened or does not exist.')
+            print('Thread was terminated.')
 
     def set_interval(self, interval):
         self.serial_port.write('PERIOD {}\r\n'.format(interval).encode())
 
     def start(self, serial_port, interval):
-        driver_thread = threading.Thread(target=self.start_driver, args=(serial_port, interval,))
-        driver_thread.start()
+        self.driver_thread = threading.Thread(target=self.start_driver, args=(serial_port, interval,))
+        self.driver_thread.start()
 
     def start_driver(self, serial_port, interval: float = 0) -> None:
         self.serial_port = serial_port
@@ -125,16 +130,16 @@ class SimpleDriver(object):
         self.server()
 
     def stop_driver(self) -> None:
-        self.serial_port.cancel_read()
-        self.serial_port.cancel_write()
+        #self.serial_port.cancel_read()
+        #self.serial_port.cancel_write()
         self.serial_port.close()
 
 
 class SomeSampleHandler(Observer):
     def __init__(self):
-        Observer.__init__(self)
+        super(Observer, self).__init__()
 
-    def new_sample(self, sample: str) -> None:
+    def new_sample(self, sample: dict) -> None:
         print(sample)
 
 

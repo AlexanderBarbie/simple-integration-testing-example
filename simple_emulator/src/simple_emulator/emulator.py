@@ -27,10 +27,9 @@ SOFTWARE.
 import argparse
 import csv
 import sys
-from threading import Timer
-
+from threading import Timer, Thread
 import serial
-
+import time
 
 class Options(object):
 
@@ -64,8 +63,8 @@ class RepeatingTimer(object):
         self.f(*self.args, **self.kwargs)
         self.start()
 
-    def isAlive(self):
-        return self.timer.isAlive()
+    def is_alive(self):
+        return self.timer.is_alive()
 
     def cancel(self):
         self.timer.cancel()
@@ -80,6 +79,7 @@ class SimpleEmulator(object):
         self.__serial_port = None
         self.__timer = None
         self.__file = None
+        self.driver_thread = None
         self.__current_line = 1
 
     @property
@@ -96,13 +96,17 @@ class SimpleEmulator(object):
 
     def get_sample(self) -> None:
         new_value = self.read_next()
-        self.serial_port.write('#{}: {}\r\n'.format(list(new_value.keys())[0], list(new_value.values())[0]).encode())
+        try:
+            self.serial_port.write('#{}: {}\r\n'.format(list(new_value.keys())[0], list(new_value.values())[0]).encode())
+        except serial.SerialException:
+            self.timer = 0
+            print("Port is closed can't write.")
 
     def read_next(self) -> dict:
-        if self.__current_line + 1 > len(self.file):
+        if self.__current_line + 1 >= len(self.file):
             self.__current_line = -1
-        self.__current_line += 1
-        return self.file[self.__current_line + 1]
+        self.__current_line = self.__current_line + 1
+        return self.file[self.__current_line]
 
     @property
     def serial_port(self) -> serial.Serial:
@@ -111,7 +115,7 @@ class SimpleEmulator(object):
     @serial_port.setter
     def serial_port(self, serial_port: str) -> None:
         try:
-            self.__serial_port = serial.Serial(serial_port, baudrate=9200, timeout=0.5)  # open serial port
+            self.__serial_port = serial.Serial(serial_port, baudrate=9600, timeout=0)  # open serial port
         except serial.SerialException:
             raise IOError("Problem connecting to serial device.")
 
@@ -127,18 +131,23 @@ class SimpleEmulator(object):
                     interval_command, value = received_command.split(' ')
                     value = float(value)
                     if self.timer is not None:
-                        if self.timer.isAlive():
+                        if self.timer.is_alive():
                             self.timer.cancel()
                     self.timer = value
                     self.serial_port.write('SET NEW PERIOD: {} (seconds)\r\n'.format(value).encode())
                 else:
-                    print("WTF: {}".format(received_command))
                     self.serial_port.write('Invalid Command\r\n'.encode())
         except serial.SerialException:
-            print('Serial port is already opened or does not exist.')
+            #print('Serial port is already opened or does not exist.')
+            pass
+
+    def start(self, serial_port, filename, interval):
+        self.driver_thread = Thread(target=self.start_emulator, args=(serial_port, filename, interval,))
+        self.driver_thread.start()
 
     def start_emulator(self, serial_port: str, filename: str, interval: float = 0) -> None:
         self.serial_port = serial_port
+        time.sleep(0.5)
         self.file = filename
         self.timer = interval
 
@@ -157,9 +166,11 @@ class SimpleEmulator(object):
     @timer.setter
     def timer(self, interval: float) -> None:
         if self.__timer is not None:
-            if self.__timer.isAlive():
+            if self.__timer.is_alive():
                 self.__timer.cancel()
-        if interval > 0:
+        if interval is None:
+            self.__timer = None
+        elif interval > 0:
             self.__timer = RepeatingTimer(interval, self.get_sample)
             self.__timer.start()
         else:
@@ -171,7 +182,7 @@ if __name__ == "__main__":
     try:
         options = Options(sys.argv[1:])
         emulator = SimpleEmulator()
-        emulator.start_emulator(options.args.serial_port, options.args.filename, options.args.interval)
+        emulator.start(options.args.serial_port, options.args.filename, options.args.interval)
         print("Emulator was started")
     except KeyboardInterrupt:
         emulator.stop_emulator()

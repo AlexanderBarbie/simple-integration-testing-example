@@ -1,14 +1,14 @@
 from setuptools import setup
 
 setup(
-    name='simple-emulator',
+    name='simple_driver',
     version='1.0',
-    description='A simple Emulator to demonstrate integration tests of RS232 with Docker',
-    license="Apache 2.0",
+    description='A simple driver to demonstrate integration tests of RS232 interfaces with Docker',
+    license="MIT",
     author='Alexander Barbie',
     author_email='alexanderbarbie@gmx.de',
     url="https://github.com/",
     package_dir={'': 'src'},
-    packages=['simple-emulator'],  # same as name
+    packages=['simple_driver'],  # same as name
     install_requires=['pyserial'],  # external packages as dependencies
 )

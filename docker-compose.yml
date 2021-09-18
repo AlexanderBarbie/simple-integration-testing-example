@@ -1,4 +1,4 @@
-version: "3.9"
+version: "3.5"
 services:
   simple-driver:
     container_name: "simple-driver"
